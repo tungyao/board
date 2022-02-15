@@ -1,10 +1,20 @@
 #include <AM2320_asukiaaa.h>
 #include "font.h"
 
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebSer
+
+
+#ifndef APSSID
+#define APSSID "ESPap"
+#define APPSK  "lx666666"
+#endif
+
 int scl=5;//定义数字接口8
 int sda=4;//定义数字接口9
 int res=1;//定义数字接口10
-AM2320_asukiaaa mySensor;
+AM2320_asukiaaa mySensor; // 温湿度传感器
 
 
 #define OLED_SCLK_Clr() digitalWrite(scl,LOW)//SCL
@@ -21,58 +31,86 @@ AM2320_asukiaaa mySensor;
 #define OLED_DATA 1 //写数据
 
 uint8_t OLED_GRAM[128][8];//将要显示的缓存内容
-int btn =  14;
+int btn =  14; // 开关引脚
+
+// wifi =============================================================
+
+const char *ssid = APSSID;
+const char *password = APPSK;
+ESP8266WebServer server(80);
+const String postForms = "<html>\
+  <head>\
+    <title>ESP8266 Web Server POST handling</title>\
+    <style>\
+      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
+    </style>\
+  </head>\
+  <body>\
+    <h1>POST plain text to /postplain/</h1><br>\
+    <form method=\"post\" enctype=\"application/x-www-form-urlencoded\" action=\"/postplain/\">\
+      <input type=\"text\" name='name'><br>\
+      <input type=\"text\" name='pass'><br>\
+      <input type=\"submit\" value=\"Submit\">\
+    </form>\
+  </body>\
+</html>";
+void handleRoot() {
+  server.send(200, "text/html",postForms);
+}
+int addr = 0;
+void handlePlain() {
+  if (server.method() != HTTP_POST) {
+    server.send(405, "text/plain", "Method Not Allowed");
+  } else {
+    addr = 0;
+    server.send(200, "text/plain", "POST body was:\n" + server.arg("plain"));
+    String message = "POST form was:\n";
+    for (uint8_t i = 0; i < server.args(); i++) {
+      message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+      for(int j =0 ;j< server.arg(i).length();j++){  
+        EEPROM.write(addr, server.arg(i)[j]);
+        addr = addr + 1;
+      }
+      EEPROM.write(addr,',');
+      addr = addr + 1;
+    }
+    EEPROM.write(addr,'?');
+    EEPROM.end();
+    server.send(200, "text/plain", message);
+  }
+}
+
+
+// ==================================================================
+
+
 void setup() {
-  pinMode(14,INPUT_PULLUP);
+  pinMode(14,INPUT_PULLUP); // 开关控制显示 这已经是第二个版本了
   Serial.begin(115200);
   while(!Serial);
+  Serial.setDebugOutput(true); // 这一句代码应该是必须增加 不然AP可能不能打开
   Serial.println("started");
-  Wire.begin(13,12);
+  Wire.begin(13,12); // 传感器 
   mySensor.setWire(&Wire);
-  uint8_t t=' ';
+  OledStart();
+
+
+
+}
+
+//
+void OledStart(){
   OLED_Init();
   OLED_ColorTurn(0);//0正常显示 1反色显示
   OLED_DisplayTurn(0);//0正常显示 1翻转180度显示
-//  while(1)
-//  {
-//    delay(500);
-//    OLED_Clear();
-//    OLED_ShowChinese(0,0,0,16);//中
-//    OLED_ShowChinese(18,0,1,16);//景
-//    OLED_ShowChinese(36,0,2,16);//园
-//    OLED_ShowChinese(54,0,3,16);//电
-//    OLED_ShowChinese(72,0,4,16);//子
-//    OLED_ShowChinese(90,0,5,16);//科
-//    OLED_ShowChinese(108,0,6,16);//技
-//    OLED_ShowString(8,16,"ZHONGJINGYUAN",16);
-//    OLED_ShowString(20,32,"2014/05/01",16);
-//    OLED_ShowString(0,48,"ASCII:",16);  
-//    OLED_ShowString(63,48,"CODE:",16);
-//    OLED_ShowChar(48,48,t,16);//显示ASCII字符    
-//    t++;
-//    if(t>'~')t=' ';
-//    OLED_ShowNum(103,48,t,3,16);
-//    OLED_Refresh();
-//    delay(500);
-//    OLED_Clear();
-//    OLED_ShowChinese(0,0,0,16);  //16*16 中
-//    OLED_ShowChinese(16,0,0,24); //24*24 中
-//    OLED_ShowChinese(24,20,0,32);//32*32 中
-//    OLED_ShowChinese(64,0,0,64); //64*64 中
-//    OLED_Refresh();
-//    delay(500);
-//    OLED_Clear();
-//    OLED_ShowString(0,0,"ABC",12);//6*12 “ABC”
-//    OLED_ShowString(0,12,"ABC",16);//8*16 “ABC”
-//    OLED_ShowString(0,28,"ABC",24);//12*24 “ABC”
-//    OLED_Refresh();
-//    delay(500);
-//  }
   OLED_Clear();
 }
+
+
+
+
 boolean val = false;
 void loop() {
-  
   if (digitalRead(btn) == LOW && val == true) {
     unsigned long oneTime = millis(); // 第一次按 关闭
     val = false;
@@ -520,3 +558,38 @@ void OLED_Init(void)
   OLED_WR_Byte(0xAF,OLED_CMD);
   OLED_Clear();
 }
+//  while(1)
+//  {
+//    delay(500);
+//    OLED_Clear();
+//    OLED_ShowChinese(0,0,0,16);//中
+//    OLED_ShowChinese(18,0,1,16);//景
+//    OLED_ShowChinese(36,0,2,16);//园
+//    OLED_ShowChinese(54,0,3,16);//电
+//    OLED_ShowChinese(72,0,4,16);//子
+//    OLED_ShowChinese(90,0,5,16);//科
+//    OLED_ShowChinese(108,0,6,16);//技
+//    OLED_ShowString(8,16,"ZHONGJINGYUAN",16);
+//    OLED_ShowString(20,32,"2014/05/01",16);
+//    OLED_ShowString(0,48,"ASCII:",16);  
+//    OLED_ShowString(63,48,"CODE:",16);
+//    OLED_ShowChar(48,48,t,16);//显示ASCII字符    
+//    t++;
+//    if(t>'~')t=' ';
+//    OLED_ShowNum(103,48,t,3,16);
+//    OLED_Refresh();
+//    delay(500);
+//    OLED_Clear();
+//    OLED_ShowChinese(0,0,0,16);  //16*16 中
+//    OLED_ShowChinese(16,0,0,24); //24*24 中
+//    OLED_ShowChinese(24,20,0,32);//32*32 中
+//    OLED_ShowChinese(64,0,0,64); //64*64 中
+//    OLED_Refresh();
+//    delay(500);
+//    OLED_Clear();
+//    OLED_ShowString(0,0,"ABC",12);//6*12 “ABC”
+//    OLED_ShowString(0,12,"ABC",16);//8*16 “ABC”
+//    OLED_ShowString(0,28,"ABC",24);//12*24 “ABC”
+//    OLED_Refresh();
+//    delay(500);
+//  }
