@@ -3,182 +3,186 @@
 
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
-#include <ESP8266WebSer
+#include <ESP8266WebServer.h>
+#include <ArduinoJson.h>
+
+
 
 
 #ifndef APSSID
 #define APSSID "ESPap"
-#define APPSK  "lx666666"
+#define APPSK "lx666666"
 #endif
 
-int scl=5;//定义数字接口8
-int sda=4;//定义数字接口9
-int res=1;//定义数字接口10
+int scl = 5;              //定义数字接口8
+int sda = 4;              //定义数字接口9
+int res = 1;              //定义数字接口10
 AM2320_asukiaaa mySensor; // 温湿度传感器
 
+#define OLED_SCLK_Clr() digitalWrite(scl, LOW) // SCL
+#define OLED_SCLK_Set() digitalWrite(scl, HIGH)
 
-#define OLED_SCLK_Clr() digitalWrite(scl,LOW)//SCL
-#define OLED_SCLK_Set() digitalWrite(scl,HIGH)
+#define OLED_SDIN_Clr() digitalWrite(sda, LOW) // SDA
+#define OLED_SDIN_Set() digitalWrite(sda, HIGH)
 
-#define OLED_SDIN_Clr() digitalWrite(sda,LOW)//SDA
-#define OLED_SDIN_Set() digitalWrite(sda,HIGH)
+#define OLED_RST_Clr() digitalWrite(res, LOW) // RES   注：此引脚是为了配合SPI驱动模块改成I2C驱动模块使用的（改装的话必须接），如果买的是I2C模块，请忽略此引脚。
+#define OLED_RST_Set() digitalWrite(res, HIGH)
 
-#define OLED_RST_Clr() digitalWrite(res,LOW)//RES   注：此引脚是为了配合SPI驱动模块改成I2C驱动模块使用的（改装的话必须接），如果买的是I2C模块，请忽略此引脚。
-#define OLED_RST_Set() digitalWrite(res,HIGH)
-
-
-#define OLED_CMD  0  //写命令
+#define OLED_CMD 0  //写命令
 #define OLED_DATA 1 //写数据
 
-uint8_t OLED_GRAM[128][8];//将要显示的缓存内容
-int btn =  14; // 开关引脚
+uint8_t OLED_GRAM[128][8]; //将要显示的缓存内容
+int btn = 14;              // 开关引脚
 
 // wifi =============================================================
 
 const char *ssid = APSSID;
 const char *password = APPSK;
+
 ESP8266WebServer server(80);
-const String postForms = "<html>\
-  <head>\
-    <title>ESP8266 Web Server POST handling</title>\
-    <style>\
-      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
-    </style>\
-  </head>\
-  <body>\
-    <h1>POST plain text to /postplain/</h1><br>\
-    <form method=\"post\" enctype=\"application/x-www-form-urlencoded\" action=\"/postplain/\">\
-      <input type=\"text\" name='name'><br>\
-      <input type=\"text\" name='pass'><br>\
-      <input type=\"submit\" value=\"Submit\">\
-    </form>\
-  </body>\
-</html>";
-void handleRoot() {
-  server.send(200, "text/html",postForms);
-}
-int addr = 0;
-void handlePlain() {
-  if (server.method() != HTTP_POST) {
-    server.send(405, "text/plain", "Method Not Allowed");
-  } else {
-    addr = 0;
-    server.send(200, "text/plain", "POST body was:\n" + server.arg("plain"));
-    String message = "POST form was:\n";
-    for (uint8_t i = 0; i < server.args(); i++) {
-      message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-      for(int j =0 ;j< server.arg(i).length();j++){  
-        EEPROM.write(addr, server.arg(i)[j]);
-        addr = addr + 1;
-      }
-      EEPROM.write(addr,',');
-      addr = addr + 1;
-    }
-    EEPROM.write(addr,'?');
-    EEPROM.end();
-    server.send(200, "text/plain", message);
+
+int addr = 0; // 存储的wifi ssid and poassword
+
+// wifi 扫描
+void prinScanResult(int networksFound)
+{
+  DynamicJsonDocument doc(4096);
+  String result;
+  
+  for (int i = 0; i < networksFound; i++)
+  {
+    // Serial.printf("%d: %s, Ch:%d (%ddBm) %s\n", i + 1, WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i), WiFi.encryptionType(i) == ENC_TYPE_NONE ? "open" : "");
+    doc[WiFi.SSID(i).c_str()] = "0";
   }
+  serializeJson(doc,result);
+  server.send(200, "application/json", result);
 }
-
-
 // ==================================================================
 
+// 服务器相关==================================================================
+// <!doctype html><html lang="en"><head><meta charset="utf-8"/><link rel="icon" href="/favicon.ico"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="theme-color" content="#000000"/><meta name="description" content="Web site created using create-react-app"/><title>React App</title><script defer="defer" src="http://www.tungyao.com/static/js/main.595954af.js"></script><link href="http://www.tungyao.com/static/css/main.40185fa1.css" rel="stylesheet"></head><body><noscript>You need to enable JavaScript to run this app.</noscript><div id="root"></div></body></html>
+const String indexHtml = "";
+void index_html()
+{
+  server.send(200, "text/html", indexHtml);
+}
 
-void setup() {
-  pinMode(14,INPUT_PULLUP); // 开关控制显示 这已经是第二个版本了
+
+void wifi_scan()
+{
+  
+  WiFi.scanNetworksAsync(prinScanResult);
+}
+// ===================================================================
+
+void setup()
+{
+  pinMode(14, INPUT_PULLUP); // 开关控制显示 这已经是第二个版本了
   Serial.begin(115200);
-  while(!Serial);
+  while (!Serial);
   Serial.setDebugOutput(true); // 这一句代码应该是必须增加 不然AP可能不能打开
   Serial.println("started");
-  Wire.begin(13,12); // 传感器 
+  Wire.begin(13, 12); // 传感器
   mySensor.setWire(&Wire);
   OledStart();
 
+  // api服务器
+  WiFi.mode(WIFI_STA);
+  WiFi.softAP(ssid);
+  IPAddress myIP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(myIP);
 
-
+  server.on("/", index_html);
+  server.on("/api/wifi_scan", wifi_scan);
+  server.begin();
 }
 
 //
-void OledStart(){
+void OledStart()
+{
   OLED_Init();
-  OLED_ColorTurn(0);//0正常显示 1反色显示
-  OLED_DisplayTurn(0);//0正常显示 1翻转180度显示
+  OLED_ColorTurn(0);   // 0正常显示 1反色显示
+  OLED_DisplayTurn(0); // 0正常显示 1翻转180度显示
   OLED_Clear();
 }
 
-
-
-
 boolean val = false;
-void loop() {
-  if (digitalRead(btn) == LOW && val == true) {
+void loop()
+{
+  if (digitalRead(btn) == LOW && val == true)
+  {
     unsigned long oneTime = millis(); // 第一次按 关闭
     val = false;
     delay(500);
   }
-  if (digitalRead(btn) == LOW && val == false) {
+  if (digitalRead(btn) == LOW && val == false)
+  {
     unsigned long oneTime = millis(); // 第一次按 关闭
     val = true;
     OLED_Clear();
     delay(500);
   }
   Serial.println(val);
-   if (val == false) {
-      display();
-   }
+  if (val == false)
+  {
+    display();
+  }
 }
-void display(){
-  if (mySensor.update() != 0) {
-//    Serial.println("Error: Cannot update sensor values.");
-    String Err  = "cannot update sensor values";
-    int Errlen = Err.length() + 1; 
+void display()
+{
+  if (mySensor.update() != 0)
+  {
+    String Err = "cannot update sensor values";
+    int Errlen = Err.length() + 1;
     char Errarray[Errlen];
     Err.toCharArray(Errarray, Errlen);
-    OLED_ShowString(0,0,Errarray,16);
-    OLED_Refresh();
-    delay(2000);
-  } else {
-//    Serial.println("temperatureC:" + String(mySensor.temperatureC) + " C");
-//    Serial.println("temperatureF: " + String(mySensor.temperatureF) + " F");
-//    Serial.println("humidity: " + String(mySensor.humidity) + " %");
-//
-//    Serial.println("at " + String(millis()) + " ms");
-//  Serial.println("");
-    String C = "temp: " + String(mySensor.temperatureC);
-    int Clen = C.length() + 1; 
-    char Carray[Clen];
-    C.toCharArray(Carray, Clen);
-    
-    String T = "humidity: " + String(mySensor.humidity);
-    int Tlen = T.length() + 1; 
-    char Tarray[Tlen];
-    T.toCharArray(Tarray, Tlen);
-  
-    OLED_ShowString(0,0,Carray,16);
-    OLED_ShowString(0,16,Tarray,16);
+    OLED_ShowString(0, 0, Errarray, 16);
     OLED_Refresh();
     delay(2000);
   }
- }
+  else
+  {
+    OLED_ShowChinese(0, 0, 0, 16);  // 温
+    OLED_ShowChinese(18, 0, 2, 16); // 度
+    String C = ": " + String(mySensor.temperatureC);
+    int Clen = C.length() + 1;
+    char Carray[Clen];
+    C.toCharArray(Carray, Clen);
+    OLED_ShowString(32, 0, Carray, 16);
+    String T = ": " + String(mySensor.humidity);
+    int Tlen = T.length() + 1;
+    char Tarray[Tlen];
+    T.toCharArray(Tarray, Tlen);
+    OLED_ShowChinese(0, 16, 1, 16);  // 湿
+    OLED_ShowChinese(18, 16, 2, 16); // 度
+
+    OLED_ShowString(32, 16, Tarray, 16);
+    OLED_Refresh();
+    delay(2000);
+  }
+}
 void OLED_ColorTurn(uint8_t i)
 {
-  if(!i) OLED_WR_Byte(0xA6,OLED_CMD);//正常显示
-  else  OLED_WR_Byte(0xA7,OLED_CMD);//反色显示
+  if (!i)
+    OLED_WR_Byte(0xA6, OLED_CMD); //正常显示
+  else
+    OLED_WR_Byte(0xA7, OLED_CMD); //反色显示
 }
 
 //屏幕旋转180度
 void OLED_DisplayTurn(uint8_t i)
 {
-  if(i==0)
-    {
-      OLED_WR_Byte(0xC8,OLED_CMD);//正常显示
-      OLED_WR_Byte(0xA1,OLED_CMD);
-    }
-else
-    {
-      OLED_WR_Byte(0xC0,OLED_CMD);//反转显示
-      OLED_WR_Byte(0xA0,OLED_CMD);
-    }
+  if (i == 0)
+  {
+    OLED_WR_Byte(0xC8, OLED_CMD); //正常显示
+    OLED_WR_Byte(0xA1, OLED_CMD);
+  }
+  else
+  {
+    OLED_WR_Byte(0xC0, OLED_CMD); //反转显示
+    OLED_WR_Byte(0xA0, OLED_CMD);
+  }
 }
 //起始信号
 void I2C_Start(void)
@@ -208,10 +212,10 @@ void I2C_WaitAck(void) //测数据信号的电平
 void Send_Byte(uint8_t dat)
 {
   uint8_t i;
-  for(i=0;i<8;i++)
+  for (i = 0; i < 8; i++)
   {
-    OLED_SCLK_Clr();//将时钟信号设置为低电平
-    if(dat&0x80)//将dat的8位从最高位依次写入
+    OLED_SCLK_Clr(); //将时钟信号设置为低电平
+    if (dat & 0x80)  //将dat的8位从最高位依次写入
     {
       OLED_SDIN_Set();
     }
@@ -219,343 +223,365 @@ void Send_Byte(uint8_t dat)
     {
       OLED_SDIN_Clr();
     }
-    OLED_SCLK_Set();//将时钟信号设置为高电平
-    OLED_SCLK_Clr();//将时钟信号设置为低电平
-    dat<<=1;
+    OLED_SCLK_Set(); //将时钟信号设置为高电平
+    OLED_SCLK_Clr(); //将时钟信号设置为低电平
+    dat <<= 1;
   }
 }
 
 //发送一个字节
 //向SSD1306写入一个字节。
-//mode:数据/命令标志 0,表示命令;1,表示数据;
-void OLED_WR_Byte(uint8_t dat,uint8_t mode)
+// mode:数据/命令标志 0,表示命令;1,表示数据;
+void OLED_WR_Byte(uint8_t dat, uint8_t mode)
 {
   I2C_Start();
   Send_Byte(0x78);
   I2C_WaitAck();
-  if(mode){Send_Byte(0x40);}
-  else{Send_Byte(0x00);}
+  if (mode)
+  {
+    Send_Byte(0x40);
+  }
+  else
+  {
+    Send_Byte(0x00);
+  }
   I2C_WaitAck();
   Send_Byte(dat);
   I2C_WaitAck();
   I2C_Stop();
 }
 
-//更新显存到OLED  
+//更新显存到OLED
 void OLED_Refresh(void)
 {
-  uint8_t i,n;
-  for(i=0;i<8;i++)
+  uint8_t i, n;
+  for (i = 0; i < 8; i++)
   {
-     OLED_WR_Byte(0xb0+i,OLED_CMD); //设置行起始地址
-     OLED_WR_Byte(0x00,OLED_CMD);   //设置低列起始地址
-     OLED_WR_Byte(0x10,OLED_CMD);   //设置高列起始地址
-     for(n=0;n<128;n++)
-     OLED_WR_Byte(OLED_GRAM[n][i],OLED_DATA);
+    OLED_WR_Byte(0xb0 + i, OLED_CMD); //设置行起始地址
+    OLED_WR_Byte(0x00, OLED_CMD);     //设置低列起始地址
+    OLED_WR_Byte(0x10, OLED_CMD);     //设置高列起始地址
+    for (n = 0; n < 128; n++)
+      OLED_WR_Byte(OLED_GRAM[n][i], OLED_DATA);
   }
 }
 //清屏函数
 void OLED_Clear(void)
 {
-  uint8_t i,n;
-  for(i=0;i<8;i++)
+  uint8_t i, n;
+  for (i = 0; i < 8; i++)
   {
-     for(n=0;n<128;n++)
-      {
-       OLED_GRAM[n][i]=0;//清除所有数据
-      }
+    for (n = 0; n < 128; n++)
+    {
+      OLED_GRAM[n][i] = 0; //清除所有数据
+    }
   }
-  OLED_Refresh();//更新显示
+  OLED_Refresh(); //更新显示
 }
 
-//画点 
-//x:0~127
-//y:0~63
-void OLED_DrawPoint(uint8_t x,uint8_t y)
+//画点
+// x:0~127
+// y:0~63
+void OLED_DrawPoint(uint8_t x, uint8_t y)
 {
-  uint8_t i,m,n;
-  i=y/8;
-  m=y%8;
-  n=1<<m;
-  OLED_GRAM[x][i]|=n;
+  uint8_t i, m, n;
+  i = y / 8;
+  m = y % 8;
+  n = 1 << m;
+  OLED_GRAM[x][i] |= n;
 }
 
 //清除一个点
-//x:0~127
-//y:0~63
-void OLED_ClearPoint(uint8_t x,uint8_t y)
+// x:0~127
+// y:0~63
+void OLED_ClearPoint(uint8_t x, uint8_t y)
 {
-  uint8_t i,m,n;
-  i=y/8;
-  m=y%8;
-  n=1<<m;
-  OLED_GRAM[x][i]=~OLED_GRAM[x][i];
-  OLED_GRAM[x][i]|=n;
-  OLED_GRAM[x][i]=~OLED_GRAM[x][i];
+  uint8_t i, m, n;
+  i = y / 8;
+  m = y % 8;
+  n = 1 << m;
+  OLED_GRAM[x][i] = ~OLED_GRAM[x][i];
+  OLED_GRAM[x][i] |= n;
+  OLED_GRAM[x][i] = ~OLED_GRAM[x][i];
 }
 
 //画线
-//x:0~128
-//y:0~64
-void OLED_DrawLine(uint8_t x1,uint8_t y1,uint8_t x2,uint8_t y2)
+// x:0~128
+// y:0~64
+void OLED_DrawLine(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2)
 {
-  uint8_t i,k,k1,k2,y0;
-  if(x1==x2)    //画竖线
+  uint8_t i, k, k1, k2, y0;
+  if (x1 == x2) //画竖线
   {
-      for(i=0;i<(y2-y1);i++)
-      {
-        OLED_DrawPoint(x1,y1+i);
-      }
+    for (i = 0; i < (y2 - y1); i++)
+    {
+      OLED_DrawPoint(x1, y1 + i);
+    }
   }
-  else if(y1==y2)   //画横线
+  else if (y1 == y2) //画横线
   {
-      for(i=0;i<(x2-x1);i++)
-      {
-        OLED_DrawPoint(x1+i,y1);
-      }
+    for (i = 0; i < (x2 - x1); i++)
+    {
+      OLED_DrawPoint(x1 + i, y1);
+    }
   }
-  else      //画斜线
+  else //画斜线
   {
-    k1=y2-y1;
-    k2=x2-x1;
-    k=k1*10/k2;
-    for(i=0;i<(x2-x1);i++)
-      {
-        OLED_DrawPoint(x1+i,y1+i*k/10);
-      }
+    k1 = y2 - y1;
+    k2 = x2 - x1;
+    k = k1 * 10 / k2;
+    for (i = 0; i < (x2 - x1); i++)
+    {
+      OLED_DrawPoint(x1 + i, y1 + i * k / 10);
+    }
   }
 }
-//x,y:圆心坐标
-//r:圆的半径
-void OLED_DrawCircle(uint8_t x,uint8_t y,uint8_t r)
+// x,y:圆心坐标
+// r:圆的半径
+void OLED_DrawCircle(uint8_t x, uint8_t y, uint8_t r)
 {
-  int a, b,num;
-    a = 0;
-    b = r;
-    while(2 * b * b >= r * r)      
+  int a, b, num;
+  a = 0;
+  b = r;
+  while (2 * b * b >= r * r)
+  {
+    OLED_DrawPoint(x + a, y - b);
+    OLED_DrawPoint(x - a, y - b);
+    OLED_DrawPoint(x - a, y + b);
+    OLED_DrawPoint(x + a, y + b);
+
+    OLED_DrawPoint(x + b, y + a);
+    OLED_DrawPoint(x + b, y - a);
+    OLED_DrawPoint(x - b, y - a);
+    OLED_DrawPoint(x - b, y + a);
+
+    a++;
+    num = (a * a + b * b) - r * r; //计算画的点离圆心的距离
+    if (num > 0)
     {
-        OLED_DrawPoint(x + a, y - b);
-        OLED_DrawPoint(x - a, y - b);
-        OLED_DrawPoint(x - a, y + b);
-        OLED_DrawPoint(x + a, y + b);
- 
-        OLED_DrawPoint(x + b, y + a);
-        OLED_DrawPoint(x + b, y - a);
-        OLED_DrawPoint(x - b, y - a);
-        OLED_DrawPoint(x - b, y + a);
-        
-        a++;
-        num = (a * a + b * b) - r*r;//计算画的点离圆心的距离
-        if(num > 0)
-        {
-            b--;
-            a--;
-        }
+      b--;
+      a--;
     }
+  }
 }
 
 //在指定位置显示一个字符,包括部分字符
-//x:0~127
-//y:0~63
-//size:选择字体 12/16/24
+// x:0~127
+// y:0~63
+// size:选择字体 12/16/24
 //取模方式 逐列式
-void OLED_ShowChar(uint8_t x,uint8_t y,const char chr,uint8_t size1)
+void OLED_ShowChar(uint8_t x, uint8_t y, const char chr, uint8_t size1)
 {
-  uint8_t i,m,temp,size2,chr1;
-  uint8_t y0=y;
-  size2=(size1/8+((size1%8)?1:0))*(size1/2);  //得到字体一个字符对应点阵集所占的字节数
-  chr1=chr-' ';  //计算偏移后的值
-  for(i=0;i<size2;i++)
+  uint8_t i, m, temp, size2, chr1;
+  uint8_t y0 = y;
+  size2 = (size1 / 8 + ((size1 % 8) ? 1 : 0)) * (size1 / 2); //得到字体一个字符对应点阵集所占的字节数
+  chr1 = chr - ' ';                                          //计算偏移后的值
+  for (i = 0; i < size2; i++)
   {
-    if(size1==12)
-        { 
-          temp=pgm_read_byte(&asc2_1206[chr1][i]);
-        } //调用1206字体
-    else if(size1==16)
-        {
-          temp=pgm_read_byte(&asc2_1608[chr1][i]);
-        } //调用1608字体
-    else if(size1==24)
-        {
-          temp=pgm_read_byte(&asc2_2412[chr1][i]);
-        } //调用2412字体
-    else return;
-        for(m=0;m<8;m++)           //写入数据
-        {
-          if(temp&0x80)OLED_DrawPoint(x,y);
-          else OLED_ClearPoint(x,y);
-          temp<<=1;
-          y++;
-          if((y-y0)==size1)
-          {
-            y=y0;
-            x++;
-            break;
-          }
-        }
+    if (size1 == 12)
+    {
+      temp = pgm_read_byte(&asc2_1206[chr1][i]);
+    } //调用1206字体
+    else if (size1 == 16)
+    {
+      temp = pgm_read_byte(&asc2_1608[chr1][i]);
+    } //调用1608字体
+    else if (size1 == 24)
+    {
+      temp = pgm_read_byte(&asc2_2412[chr1][i]);
+    } //调用2412字体
+    else
+      return;
+    for (m = 0; m < 8; m++) //写入数据
+    {
+      if (temp & 0x80)
+        OLED_DrawPoint(x, y);
+      else
+        OLED_ClearPoint(x, y);
+      temp <<= 1;
+      y++;
+      if ((y - y0) == size1)
+      {
+        y = y0;
+        x++;
+        break;
+      }
+    }
   }
 }
 
-
 //显示字符串
-//x,y:起点坐标  
-//size1:字体大小 
-//*chr:字符串起始地址 
-void OLED_ShowString(uint8_t x,uint8_t y,const char *chr,uint8_t size1)
+// x,y:起点坐标
+// size1:字体大小
+//*chr:字符串起始地址
+void OLED_ShowString(uint8_t x, uint8_t y, const char *chr, uint8_t size1)
 {
-  while((*chr>=' ')&&(*chr<='~'))//判断是不是非法字符!
+  while ((*chr >= ' ') && (*chr <= '~')) //判断是不是非法字符!
   {
-    OLED_ShowChar(x,y,*chr,size1);
-    x+=size1/2;
-    if(x>128-size1/2)  //换行
+    OLED_ShowChar(x, y, *chr, size1);
+    x += size1 / 2;
+    if (x > 128 - size1 / 2) //换行
     {
-      x=0;
-      y+=size1;
+      x = 0;
+      y += size1;
     }
     chr++;
   }
 }
 
-//m^n
-u32 OLED_Pow(uint8_t m,uint8_t n)
+// m^n
+u32 OLED_Pow(uint8_t m, uint8_t n)
 {
-  u32 result=1;
-  while(n--)
+  u32 result = 1;
+  while (n--)
   {
-    result*=m;
+    result *= m;
   }
   return result;
 }
 
 ////显示2个数字
-////x,y :起点坐标  
+////x,y :起点坐标
 ////len :数字的位数
 ////size:字体大小
-void OLED_ShowNum(uint8_t x,uint8_t y,int num,uint8_t len,uint8_t size1)
+void OLED_ShowNum(uint8_t x, uint8_t y, int num, uint8_t len, uint8_t size1)
 {
-  uint8_t t,temp;
-  for(t=0;t<len;t++)
+  uint8_t t, temp;
+  for (t = 0; t < len; t++)
   {
-    temp=(num/OLED_Pow(10,len-t-1))%10;
-      if(temp==0)
-      {
-        OLED_ShowChar(x+(size1/2)*t,y,'0',size1);
-      }
-      else 
-      {
-        OLED_ShowChar(x+(size1/2)*t,y,temp+'0',size1);
-      }
+    temp = (num / OLED_Pow(10, len - t - 1)) % 10;
+    if (temp == 0)
+    {
+      OLED_ShowChar(x + (size1 / 2) * t, y, '0', size1);
+    }
+    else
+    {
+      OLED_ShowChar(x + (size1 / 2) * t, y, temp + '0', size1);
+    }
   }
 }
 
 //显示汉字
-//x,y:起点坐标
-//num:汉字对应的序号
+// x,y:起点坐标
+// num:汉字对应的序号
 //取模方式 列行式
-void OLED_ShowChinese(uint8_t x,uint8_t y,const uint8_t num,uint8_t size1)
+void OLED_ShowChinese(uint8_t x, uint8_t y, const uint8_t num, uint8_t size1)
 {
-  uint8_t i,m,n=0,temp,chr1;
-  uint8_t x0=x,y0=y;
-  uint8_t size3=size1/8;
-  while(size3--)
+  uint8_t i, m, n = 0, temp, chr1;
+  uint8_t x0 = x, y0 = y;
+  uint8_t size3 = size1 / 8;
+  while (size3--)
   {
-    chr1=num*size1/8+n;
+    chr1 = num * size1 / 8 + n;
     n++;
-      for(i=0;i<size1;i++)
+    for (i = 0; i < size1; i++)
+    {
+      if (size1 == 16)
       {
-        if(size1==16)
-            {temp=pgm_read_byte(&Hzk1[chr1][i]);}//调用16*16字体
-        else if(size1==24)
-            {temp=pgm_read_byte(&Hzk2[chr1][i]);}//调用24*24字体
-        else if(size1==32)       
-            {temp=pgm_read_byte(&Hzk3[chr1][i]);}//调用32*32字体
-        else if(size1==64)
-            {temp=pgm_read_byte(&Hzk4[chr1][i]);}//调用64*64字体
-        else return;
-              
-            for(m=0;m<8;m++)
-              {
-                if(temp&0x01)OLED_DrawPoint(x,y);
-                else OLED_ClearPoint(x,y);
-                temp>>=1;
-                y++;
-              }
-              x++;
-              if((x-x0)==size1)
-              {x=x0;y0=y0+8;}
-              y=y0;
-       }
+        temp = pgm_read_byte(&Hzk1[chr1][i]);
+      } //调用16*16字体
+      // else if (size1 == 24)
+      // {
+      //   temp = pgm_read_byte(&Hzk2[chr1][i]);
+      // } //调用24*24字体
+      // else if (size1 == 32)
+      // {
+      //   temp = pgm_read_byte(&Hzk3[chr1][i]);
+      // } //调用32*32字体
+      // else if (size1 == 64)
+      // {
+      //   temp = pgm_read_byte(&Hzk4[chr1][i]);
+      // } //调用64*64字体
+      else
+        return;
+
+      for (m = 0; m < 8; m++)
+      {
+        if (temp & 0x01)
+          OLED_DrawPoint(x, y);
+        else
+          OLED_ClearPoint(x, y);
+        temp >>= 1;
+        y++;
+      }
+      x++;
+      if ((x - x0) == size1)
+      {
+        x = x0;
+        y0 = y0 + 8;
+      }
+      y = y0;
+    }
   }
 }
 
 //配置写入数据的起始位置
-void OLED_WR_BP(uint8_t x,uint8_t y)
+void OLED_WR_BP(uint8_t x, uint8_t y)
 {
-  OLED_WR_Byte(0xb0+y,OLED_CMD);//设置行起始地址
-  OLED_WR_Byte(((x&0xf0)>>4)|0x10,OLED_CMD);
-  OLED_WR_Byte((x&0x0f),OLED_CMD);
+  OLED_WR_Byte(0xb0 + y, OLED_CMD); //设置行起始地址
+  OLED_WR_Byte(((x & 0xf0) >> 4) | 0x10, OLED_CMD);
+  OLED_WR_Byte((x & 0x0f), OLED_CMD);
 }
 
-//x0,y0：起点坐标
-//x1,y1：终点坐标
-//BMP[]：要写入的图片数组
-void OLED_ShowPicture(uint8_t x0,uint8_t y0,uint8_t x1,uint8_t y1,const uint8_t BMP[])
+// x0,y0：起点坐标
+// x1,y1：终点坐标
+// BMP[]：要写入的图片数组
+void OLED_ShowPicture(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, const uint8_t BMP[])
 {
-  int j=0;
+  int j = 0;
   uint8_t t;
-  uint8_t x,y;
-  for(y=y0;y<y1;y++)
-   {
-     OLED_WR_BP(x0,y);
-     for(x=x0;x<x1;x++)
-     {
-       t=pgm_read_byte(&BMP[j++]);
-       OLED_WR_Byte(t,OLED_DATA);
-     }
-   }
+  uint8_t x, y;
+  for (y = y0; y < y1; y++)
+  {
+    OLED_WR_BP(x0, y);
+    for (x = x0; x < x1; x++)
+    {
+      t = pgm_read_byte(&BMP[j++]);
+      OLED_WR_Byte(t, OLED_DATA);
+    }
+  }
 }
 
-//OLED的初始化
+// OLED的初始化
 void OLED_Init(void)
 {
-  pinMode(scl,OUTPUT);//设置数字8
-  pinMode(sda,OUTPUT);//设置数字9
-  pinMode(res,OUTPUT);//设置数字10
-  
+  pinMode(scl, OUTPUT); //设置数字8
+  pinMode(sda, OUTPUT); //设置数字9
+  pinMode(res, OUTPUT); //设置数字10
+
   OLED_RST_Set();
   delay(100);
-  OLED_RST_Clr();//复位
+  OLED_RST_Clr(); //复位
   delay(200);
   OLED_RST_Set();
-  
-  OLED_WR_Byte(0xAE,OLED_CMD);//--turn off oled panel
-  OLED_WR_Byte(0x00,OLED_CMD);//---set low column address
-  OLED_WR_Byte(0x10,OLED_CMD);//---set high column address
-  OLED_WR_Byte(0x40,OLED_CMD);//--set start line address  Set Mapping RAM Display Start Line (0x00~0x3F)
-  OLED_WR_Byte(0x81,OLED_CMD);//--set contrast control register
-  OLED_WR_Byte(0xCF,OLED_CMD);// Set SEG Output Current Brightness
-  OLED_WR_Byte(0xA1,OLED_CMD);//--Set SEG/Column Mapping     0xa0左右反置 0xa1正常
-  OLED_WR_Byte(0xC8,OLED_CMD);//Set COM/Row Scan Direction   0xc0上下反置 0xc8正常
-  OLED_WR_Byte(0xA6,OLED_CMD);//--set normal display
-  OLED_WR_Byte(0xA8,OLED_CMD);//--set multiplex ratio(1 to 64)
-  OLED_WR_Byte(0x3f,OLED_CMD);//--1/64 duty
-  OLED_WR_Byte(0xD3,OLED_CMD);//-set display offset Shift Mapping RAM Counter (0x00~0x3F)
-  OLED_WR_Byte(0x00,OLED_CMD);//-not offset
-  OLED_WR_Byte(0xd5,OLED_CMD);//--set display clock divide ratio/oscillator frequency
-  OLED_WR_Byte(0x80,OLED_CMD);//--set divide ratio, Set Clock as 100 Frames/Sec
-  OLED_WR_Byte(0xD9,OLED_CMD);//--set pre-charge period
-  OLED_WR_Byte(0xF1,OLED_CMD);//Set Pre-Charge as 15 Clocks & Discharge as 1 Clock
-  OLED_WR_Byte(0xDA,OLED_CMD);//--set com pins hardware configuration
-  OLED_WR_Byte(0x12,OLED_CMD);
-  OLED_WR_Byte(0xDB,OLED_CMD);//--set vcomh
-  OLED_WR_Byte(0x40,OLED_CMD);//Set VCOM Deselect Level
-  OLED_WR_Byte(0x20,OLED_CMD);//-Set Page Addressing Mode (0x00/0x01/0x02)
-  OLED_WR_Byte(0x02,OLED_CMD);//
-  OLED_WR_Byte(0x8D,OLED_CMD);//--set Charge Pump enable/disable
-  OLED_WR_Byte(0x14,OLED_CMD);//--set(0x10) disable
-  OLED_WR_Byte(0xA4,OLED_CMD);// Disable Entire Display On (0xa4/0xa5)
-  OLED_WR_Byte(0xA6,OLED_CMD);// Disable Inverse Display On (0xa6/a7) 
-  OLED_WR_Byte(0xAF,OLED_CMD);
+
+  OLED_WR_Byte(0xAE, OLED_CMD); //--turn off oled panel
+  OLED_WR_Byte(0x00, OLED_CMD); //---set low column address
+  OLED_WR_Byte(0x10, OLED_CMD); //---set high column address
+  OLED_WR_Byte(0x40, OLED_CMD); //--set start line address  Set Mapping RAM Display Start Line (0x00~0x3F)
+  OLED_WR_Byte(0x81, OLED_CMD); //--set contrast control register
+  OLED_WR_Byte(0xCF, OLED_CMD); // Set SEG Output Current Brightness
+  OLED_WR_Byte(0xA1, OLED_CMD); //--Set SEG/Column Mapping     0xa0左右反置 0xa1正常
+  OLED_WR_Byte(0xC8, OLED_CMD); // Set COM/Row Scan Direction   0xc0上下反置 0xc8正常
+  OLED_WR_Byte(0xA6, OLED_CMD); //--set normal display
+  OLED_WR_Byte(0xA8, OLED_CMD); //--set multiplex ratio(1 to 64)
+  OLED_WR_Byte(0x3f, OLED_CMD); //--1/64 duty
+  OLED_WR_Byte(0xD3, OLED_CMD); //-set display offset Shift Mapping RAM Counter (0x00~0x3F)
+  OLED_WR_Byte(0x00, OLED_CMD); //-not offset
+  OLED_WR_Byte(0xd5, OLED_CMD); //--set display clock divide ratio/oscillator frequency
+  OLED_WR_Byte(0x80, OLED_CMD); //--set divide ratio, Set Clock as 100 Frames/Sec
+  OLED_WR_Byte(0xD9, OLED_CMD); //--set pre-charge period
+  OLED_WR_Byte(0xF1, OLED_CMD); // Set Pre-Charge as 15 Clocks & Discharge as 1 Clock
+  OLED_WR_Byte(0xDA, OLED_CMD); //--set com pins hardware configuration
+  OLED_WR_Byte(0x12, OLED_CMD);
+  OLED_WR_Byte(0xDB, OLED_CMD); //--set vcomh
+  OLED_WR_Byte(0x40, OLED_CMD); // Set VCOM Deselect Level
+  OLED_WR_Byte(0x20, OLED_CMD); //-Set Page Addressing Mode (0x00/0x01/0x02)
+  OLED_WR_Byte(0x02, OLED_CMD); //
+  OLED_WR_Byte(0x8D, OLED_CMD); //--set Charge Pump enable/disable
+  OLED_WR_Byte(0x14, OLED_CMD); //--set(0x10) disable
+  OLED_WR_Byte(0xA4, OLED_CMD); // Disable Entire Display On (0xa4/0xa5)
+  OLED_WR_Byte(0xA6, OLED_CMD); // Disable Inverse Display On (0xa6/a7)
+  OLED_WR_Byte(0xAF, OLED_CMD);
   OLED_Clear();
 }
 //  while(1)
@@ -571,9 +597,9 @@ void OLED_Init(void)
 //    OLED_ShowChinese(108,0,6,16);//技
 //    OLED_ShowString(8,16,"ZHONGJINGYUAN",16);
 //    OLED_ShowString(20,32,"2014/05/01",16);
-//    OLED_ShowString(0,48,"ASCII:",16);  
+//    OLED_ShowString(0,48,"ASCII:",16);
 //    OLED_ShowString(63,48,"CODE:",16);
-//    OLED_ShowChar(48,48,t,16);//显示ASCII字符    
+//    OLED_ShowChar(48,48,t,16);//显示ASCII字符
 //    t++;
 //    if(t>'~')t=' ';
 //    OLED_ShowNum(103,48,t,3,16);

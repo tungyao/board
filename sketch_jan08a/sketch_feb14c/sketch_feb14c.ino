@@ -13,22 +13,7 @@ const char *password = APPSK;
 
 ESP8266WebServer server(80);
 
-const String postForms = "<html>\
-  <head>\
-    <title>ESP8266 Web Server POST handling</title>\
-    <style>\
-      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
-    </style>\
-  </head>\
-  <body>\
-    <h1>POST plain text to /postplain/</h1><br>\
-    <form method=\"post\" enctype=\"application/x-www-form-urlencoded\" action=\"/postplain/\">\
-      <input type=\"text\" name='name'><br>\
-      <input type=\"text\" name='pass'><br>\
-      <input type=\"submit\" value=\"Submit\">\
-    </form>\
-  </body>\
-</html>";
+
 void handleRoot() {
   server.send(200, "text/html",postForms);
 }
